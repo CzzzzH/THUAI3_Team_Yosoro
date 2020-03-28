@@ -1,5 +1,7 @@
 ## Yours
 windows_only/
+linux_only/
+include/
 proto/*.proto
 !.gitkeep
 # Cmake Generate
