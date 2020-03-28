@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 	string message = "Connected!";
 
 	DebugFunc = DebugSilently;
-	//死循环执行玩家程序
+	// Begin
 	while (!GameFinished) 
 	{
 		play();
@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 	getchar();
 	API.Quit();
 
-	// client聊天室测试
+	// Chat Test
 	/*
 	while (API.IsConnected())
 	{
