@@ -1,167 +1,129 @@
 #include <iostream>
-#include <vector>
+#include <stack>
+#include <queue>
 #include <assert.h>
-
-#define _ANTONY_LOCAL_DEBUG_
-//#define _USE_BINARY_
 
 using namespace std;
 
-/* Size of the map */
-const int MAPSIZE = 50;
+/*****************************************************************************/
 
-#ifdef _USE_BINARY_
+/* Used for offline debug, disable when used */
+#define _ANTONY_LOCAL_DEBUG_
 
-/*
-BLOCKTYPE has at least 32bits, each bit indicates a property.
-The bits are numbered in small endian. Only the first 32 bits are considered valid.
-*/
-typedef unsigned int BLOCKTYPE;
+/*****************************************************************************/
 
-/* Possible values for BLOCKTYPE */
+/* The height of the map */
+const int MAPHEIGHT = 10;
 
-#define PATH 0
-#define OBSTACLE (1 << 0)
-#define WALL (1 << 1)
-#define TABLE (1 << 2)
-#define FOODPOINT (1 << 3)
-#define COOKER (1 << 4)
-#define RUBBISHBIN (1 << 5)
-#define TASKPOINT (1 << 6)
+/* The width of the map */
+const int MAPWIDTH = 10;
 
-/* Functions of BLOCKTYPE */
+/*****************************************************************************/
 
-#define ISWALKABLE(BLOCK) (bool)!((BLOCK) & 1)
-#define CANFLYTHROUGH(BLOCK) (bool)((BLOCK) & TABLE | (BLOCK) & COOKER | (BLOCK) & RUBBISHBIN | !(BLOCK) & OBSTACLE)
-
-/* 
-OBJECTTYPE has at least 64bits, each bit represents a certain object.
-The bits are numbered in small endian. Only the first 64 bits are considered valid.
-*/
-typedef unsigned long long OBJECTTYPE;
-
-/* Possible values for OBJECTTYPE */
-/* TODO */
-
-#endif // _USE_BINARY_
-
-#ifndef _USE_BINARY_
-
-/* Type of blocks */
-enum class BlockType {
-    kPath = 0,
-    kWall = (1 << 1),
-    kTable = (1 << 2),
-    kFoodPoint = (1 << 3),
-    kCooker = (1 << 4),
-    kRubbishBin = (1 << 5),
-    kTaskPoint = (1 << 6)
+/* x-axis: vertical y-axis: horizontal */
+bool GameMap[MAPHEIGHT][MAPWIDTH] = {
+   /* 0  1  2  3  4  5  6  7  8  9         */
+	{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }, /* 0 */
+	{ 1, 0, 0, 0, 0, 1, 1, 0, 0, 1 }, /* 1 */
+	{ 1, 0, 1, 1, 1, 0, 0, 0, 1, 1 }, /* 2 */
+	{ 1, 0, 0, 0, 1, 0, 0, 0, 1, 1 }, /* 3 */
+	{ 1, 1, 1, 0, 1, 1, 1, 1, 1, 1 }, /* 4 */
+	{ 1, 1, 0, 1, 1, 0, 1, 1, 1, 1 }, /* 5 */
+	{ 0, 1, 0, 1, 0, 0, 1, 0, 1, 1 }, /* 6 */
+	{ 0, 1, 0, 1, 1, 1, 1, 0, 1, 1 }, /* 7 */
+	{ 1, 1, 1, 1, 1, 1, 1, 0, 1, 1 }, /* 8 */
+	{ 1, 0, 1, 1, 1, 1, 0, 0, 0, 1 }  /* 9 */
 };
 
-bool IsBlockWalkable(BlockType block) {
-    return block == BlockType::kPath;
-}
-
-bool IsBlockFlyable(BlockType block) {
-    return (block == BlockType::kTable) || (block == BlockType::kCooker)
-        || (block == BlockType::kRubbishBin) || (block == BlockType::kPath);
-}
-
-enum class ObjectType {
-    /* TODO */
-};
-
-#endif // !_USE_BINARY_
-
+/*****************************************************************************/
 
 #ifdef _ANTONY_LOCAL_DEBUG_
 
-struct XYPosition {
-    double x;
-    double y;
-    XYPosition(double x, double y) : x(x), y(y) {}
-    XYPosition(const XYPosition& xy) : x(xy.x), y(xy.y) {}
+struct XYPosition { 
+	int x, y; 
+	XYPosition(int x, int y) : x(x), y(y) {}
 };
 
 #endif // _ANTONY_LOCAL_DEBUG_
 
-struct Block {
-    /* Cost need to move to adjacent blocks */
-    double ul_cost = 1.4, uu_cost = 1, ur_cost = 1.4;
-    double ll_cost = 1, rr_cost = 1;
-    double dl_cost = 1.4, dd_cost = 1, dr_cost = 1.4;
-
-#ifndef _USE_BINARY_
-
-    /* The type of block */
-    BlockType block_type;
-    /* The list of objects on this block */
-    vector<ObjectType> object_list;
-
-#else
-
-    /* The type of block */
-    BLOCKTYPE block_type;
-    /* The list of objects on this block */
-    vector<OBJECTTYPE> object_list;
-
-#endif // !_USE_BINARY_
-
+struct Path {
+	/* u : up, d : down, l : left, r : right  */
+	stack<char> move_list;
+	int path_length;
 };
 
-/*
-  Column (Second dimension)
-  0 1 2 
-0 # # # <- Row (First dimension)
-1 #
-2 #
-The data structure for the map. All relative 
-Grid should be used as a singleton
-*/
-struct Grid {
-    /* Map of the game */
-    Block map[MAPSIZE][MAPSIZE];
-};
+/*****************************************************************************/
 
-/* 
-Returns the path to the center of the nearest walkable block 
-*/
-vector<double> AlignWithGrid(XYPosition player_pos) {
-    return vector<double>();
-    /* TODO */
+/* Find path using BFS */
+Path BFSFindPath(const XYPosition& start, const XYPosition& end) {
+	/* Start and end must be walkable */
+	assert(GameMap[start.x][start.y] == 1 && GameMap[end.x][end.y] == 1);
+	assert(start.x != end.x || start.y != end.y);
+	/* Initialize */
+	bool has_visited[MAPHEIGHT][MAPWIDTH];
+	memset(has_visited, 0, sizeof(has_visited));
+	char last_move_map[MAPHEIGHT][MAPWIDTH];
+	memset(last_move_map, 0, sizeof(last_move_map));
+	queue<XYPosition> query_list;
+	/* BFS */
+	query_list.push(start); has_visited[start.x][start.y] = true;
+	while (query_list.size() != 0) {
+		/* Get query */
+		XYPosition cur_query = query_list.front();
+		query_list.pop();
+		/* Check if it's our destination */
+		if (cur_query.x == end.x && cur_query.y == end.y) break;
+		/* Expand */
+		if (cur_query.x + 1 < MAPHEIGHT && !has_visited[cur_query.x + 1][cur_query.y]
+			&& GameMap[cur_query.x + 1][cur_query.y]) {
+			last_move_map[cur_query.x + 1][cur_query.y] = 'd';
+			has_visited[cur_query.x + 1][cur_query.y] = true;
+			query_list.push(XYPosition(cur_query.x + 1, cur_query.y));
+		}
+		if (cur_query.x - 1 > 0 && !has_visited[cur_query.x - 1][cur_query.y]
+			&& GameMap[cur_query.x - 1][cur_query.y]) {
+			last_move_map[cur_query.x - 1][cur_query.y] = 'u';
+			has_visited[cur_query.x - 1][cur_query.y] = true;
+			query_list.push(XYPosition(cur_query.x - 1, cur_query.y));
+		}
+		if (cur_query.y + 1 < MAPWIDTH && !has_visited[cur_query.x][cur_query.y + 1]
+			&& GameMap[cur_query.x][cur_query.y + 1]) {
+			last_move_map[cur_query.x][cur_query.y + 1] = 'r';
+			has_visited[cur_query.x][cur_query.y + 1] = true;
+			query_list.push(XYPosition(cur_query.x, cur_query.y + 1));
+		}
+		if (cur_query.y - 1 > 0 && !has_visited[cur_query.x][cur_query.y - 1]
+			&& GameMap[cur_query.x][cur_query.y - 1]) {
+			last_move_map[cur_query.x][cur_query.y - 1] = 'l';
+			has_visited[cur_query.x][cur_query.y - 1] = true;
+			query_list.push(XYPosition(cur_query.x, cur_query.y - 1));
+		}
+	}
+	/* Build path */
+	Path bfs_path; bfs_path.path_length = 0;
+	XYPosition pointer_pos(end);
+	while (true) {
+		bfs_path.move_list.push(last_move_map[pointer_pos.x][pointer_pos.y]);
+		bfs_path.path_length++;
+		switch (last_move_map[pointer_pos.x][pointer_pos.y]) {
+		case 'u': pointer_pos.x++; break;
+		case 'd': pointer_pos.x--; break;
+		case 'r': pointer_pos.y--; break;
+		case 'l': pointer_pos.y++; break;
+		}
+		if (pointer_pos.x == start.x && pointer_pos.y == start.y) break;
+	}
+	return bfs_path;
 }
 
-/* 
-Implemented with A* 
-start and end must have integar coordinates.
-*/
-vector<double> FindShortestPath(XYPosition start, XYPosition end) {
-    return vector<double>();
-    /* TODO */
-}
-
-/* 
-Implemented with B* 
-start and end must have integar coordinates.
-*/
-vector<double> FindPathQuick(XYPosition start, XYPosition end) {
-    return vector<double>();
-    /* TODO */
-}
-
-/* 
-Implemented with D*, currently not available 
-start and end must have integar coordinates.
-*/
-vector<double> FindDynamicPath(XYPosition start, XYPosition end) {
-    assert(false);
-    return vector<double>();
-}
+/*****************************************************************************/
 
 #ifdef _ANTONY_LOCAL_DEBUG_
 
 int main() {
-
+	Path move = BFSFindPath(XYPosition(9, 9), XYPosition(2, 2));
 }
 
 #endif // _ANTONY_LOCAL_DEBUG_
+
+/*************************************END*************************************/
