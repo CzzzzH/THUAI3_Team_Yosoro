@@ -16,6 +16,7 @@
 #include "CAPI.h"
 #include <thread>
 #include "structures.h"
+#include "player.h"
 #pragma comment(lib, "HPSocket.lib")
 
 #include <sys/timeb.h>
@@ -78,6 +79,7 @@ EnHandleResult CListenerImpl::OnReceive(ITcpClient* pSender, CONNID dwConnID, co
 		throw new domain_error("unknown Packet Type ID");
 		break;
 	}
+	delete message;
 	return HR_OK;
 }
 EnHandleResult CListenerImpl::OnPrepareListen(ITcpServer* pSender, SOCKET soListen)
@@ -103,7 +105,12 @@ EnHandleResult CListenerImpl::OnClose(ITcpClient* pSender, CONNID dwConnID, EnSo
 void CAPI::OnReceive(IMessage* message)
 {
 	hash_t typehash = hash2(get_type(typeid(*message).name()));
-	if (typehash == hash2(get_type(typeid(Message).name())))
+
+	if (typehash == hash2(get_type(typeid(Protobuf::MessageToClient).name())))
+	{
+		UpdateInfo((Protobuf::MessageToClient*)message);
+	}
+	else if (typehash == hash2(get_type(typeid(Message).name())))
 	{
 		if (((Message*)message)->content != NULL)
 			OnReceive(((Message*)message)->content);
@@ -122,10 +129,6 @@ void CAPI::OnReceive(IMessage* message)
 		io_mutex.lock();
 		buffer += ((Protobuf::ChatMessage*)message)->message();
 		io_mutex.unlock();
-	}
-	else if (typehash == hash2(get_type(typeid(Protobuf::MessageToClient).name())))
-	{
-		UpdateInfo((Protobuf::MessageToClient*)message);
 	}
 	else
 	{
@@ -161,6 +164,7 @@ void CAPI::SendCommandMessage(MessageToServer* message)
 
 void CAPI::CreateObj(int64_t id, Protobuf::MessageToClient* message)
 {
+	std::cout << "Create Obj " << id << std::endl;
 	MapInfo::obj_list.insert(std::pair<int64_t, shared_ptr< Obj>>(id, make_shared<Obj>(XYPosition(message->gameobjectlist().at(id).positionx(), message->gameobjectlist().at(id).positiony()), message->gameobjectlist().at(id).objtype())));
 	MapInfo::obj_list[id]->blockType = message->gameobjectlist().at(id).blocktype();
 	MapInfo::obj_list[id]->dish = message->gameobjectlist().at(id).dishtype();
@@ -179,7 +183,9 @@ void CAPI::MoveObj(int64_t id, Protobuf::MessageToClient* message, std::unordere
 	{
 		objectsToDelete.erase(id);
 	}
+	MapInfo::mutex_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y]->lock();
 	MapInfo::obj_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y].erase(id);
+	MapInfo::mutex_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y]->unlock();
 
 	MapInfo::obj_list[id]->dish = message->gameobjectlist().at(id).dishtype();
 	MapInfo::obj_list[id]->tool = message->gameobjectlist().at(id).tooltype();
@@ -187,8 +193,9 @@ void CAPI::MoveObj(int64_t id, Protobuf::MessageToClient* message, std::unordere
 	MapInfo::obj_list[id]->position.y = message->gameobjectlist().at(id).positiony();
 	MapInfo::obj_list[id]->facingDiretion = message->gameobjectlist().at(id).direction();
 
+	MapInfo::mutex_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y]->lock();
 	MapInfo::obj_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y].insert(std::pair<int64_t, shared_ptr< Obj>>(id, MapInfo::obj_list[id]));
-
+	MapInfo::mutex_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y]->unlock();
 }
 
 void CAPI::UpdateInfo(Protobuf::MessageToClient* message)
@@ -202,14 +209,18 @@ void CAPI::UpdateInfo(Protobuf::MessageToClient* message)
 		mesC2S.set_issettalent(true);
 		mesC2S.set_talent(initTalent);
 		SendCommandMessage(&mesC2S);
+		GameRunning = true;
+		std::cout << "Game start" << std::endl;
 	}
-	PlayerInfo._position.x = PlayerInfo.position.x = message->gameobjectlist().at(PlayerInfo._id).positionx();
-	PlayerInfo._position.y = PlayerInfo.position.y = message->gameobjectlist().at(PlayerInfo._id).positiony();
-	PlayerInfo.facingDirection = message->gameobjectlist().at(PlayerInfo._id).direction();
-	PlayerInfo.sightRange = PlayerInfo._sightRange = message->gameobjectlist().at(PlayerInfo._id).sightrange();
-	PlayerInfo.dish = message->gameobjectlist().at(PlayerInfo._id).dishtype();
-	PlayerInfo.tool = message->gameobjectlist().at(PlayerInfo._id).tooltype();
-	PlayerInfo.recieveText = message->gameobjectlist().at(PlayerInfo._id).speaktext();
+	Protobuf::GameObject self = message->gameobjectlist().at(PlayerInfo._id);
+	PlayerInfo._position.x = PlayerInfo.position.x = self.positionx();
+	PlayerInfo._position.y = PlayerInfo.position.y = self.positiony();
+	PlayerInfo.facingDirection = self.direction();
+	PlayerInfo.moveSpeed = self.movespeed();
+	PlayerInfo.sightRange = PlayerInfo._sightRange = self.sightrange();
+	PlayerInfo.dish = self.dishtype();
+	PlayerInfo.tool = self.tooltype();
+	PlayerInfo.recieveText = self.speaktext();
 	if (message->scores().contains(PlayerInfo._team))
 		PlayerInfo.score = message->scores().at(PlayerInfo._team);
 
@@ -223,6 +234,7 @@ void CAPI::UpdateInfo(Protobuf::MessageToClient* message)
 	{
 		std::cout << "Delete Obj" << std::endl;
 		MapInfo::obj_list.erase(i->first);
+		MapInfo::obj_map[i->second->position.x][i->second->position.y].erase(i->first);
 	}
 	task_list.resize(0);
 	for (google::protobuf::RepeatedField<google::protobuf::int32>::const_iterator i = message->tasks().begin(); i != message->tasks().end(); i++)
