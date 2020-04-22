@@ -543,9 +543,10 @@ public:
 	}
 
 	DishType get_synchronized_dish(DishType goal, int x) {//检查目标菜品或其中间产品是否可以被灶台x合成，返回第一个找到的可以合成的菜品或中间产品
+		if (goal < 20) return DishEmpty;
 		if (is_synchronized(goal, x)) return goal; //菜品可以被灶台x合成
 		for (int i = 0; i < table[goal].size(); ++i) {
-			if (get_synchronized_dish(table[goal][i], x) != -1) return table[goal][i]; //中间材料可以被灶台x合成
+			if (get_synchronized_dish(table[goal][i], x) != DishEmpty) return table[goal][i]; //中间材料可以被灶台x合成
 		}
 		return DishEmpty;//没有可合成菜品或中间产品
 	}
@@ -564,7 +565,7 @@ std::vector<int> target_cooker, target_food_point, target_mission_point;
 XYIPosition now_pos(0, 0), target_pos(0, 0);
 Bag now_bag;
 unsigned long long now_time = 0;
-int cook_time = -1;
+int cook_time = -1, block_time = 0;
 
 bool obj_compare(Obj a, Obj b)
 {
@@ -614,14 +615,38 @@ bool check_Mission(DishType target_dish)
 	return false;
 }
 
+bool check_face()
+{
+	if (PlayerInfo.position.x - double(now_pos.x) < 0.45 || PlayerInfo.position.x - double(now_pos.x) > 0.55) return false;
+	if (PlayerInfo.position.y - double(now_pos.y) < 0.45 || PlayerInfo.position.y - double(now_pos.y) > 0.55) return false;
+	int x = target_pos.x - now_pos.x;
+	int y = target_pos.y - now_pos.y;
+	if (x == 1 && PlayerInfo.facingDirection == Right) return true;
+	if (x == -1 && PlayerInfo.facingDirection == Left) return true;
+	if (y == 1 && PlayerInfo.facingDirection == Up) return true;
+	if (y == -1 && PlayerInfo.facingDirection == Down) return true;
+	return false;
+}
+
+// 移动函数
 void start_move(char dir)
 {
+	if (block_time > 50)
+	{
+		if (dir == 'u') dir = 'd';
+		if (dir == 'd') dir = 'u';
+		if (dir == 'r') dir = 'l';
+		if (dir == 'l') dir = 'r';
+		block_time = 0;
+	}
+	cout << "Move Dir: " << dir << endl;
 	if ((dir == 'u' || dir == 'd'))
 	{
 		if (double(PlayerInfo.position.y - now_pos.y) - 0.5 > 0.1) move(Down, 50);
 		else if (double(PlayerInfo.position.y - now_pos.y) - 0.5 < -0.1) move(Up, 50);
 		else if (dir == 'u') move(Left, 200);
 		else move(Right, 200);
+		return;
 	}
 	if ((dir == 'l' || dir == 'r'))
 	{
@@ -629,6 +654,7 @@ void start_move(char dir)
 		else if (double(PlayerInfo.position.x - now_pos.x) - 0.5 < -0.1) move(Right, 50);
 		else if (dir == 'r') move(Up, 200);
 		else move(Down, 200);
+		return;
 	}
 }
 
@@ -637,8 +663,6 @@ double getAngle(bool reverse = false)
 	double angle;
 	angle = atan2(target_pos.y - now_pos.y, target_pos.x - now_pos.x);
 	if (reverse) angle += PI;
-	if (angle > 2 * PI) angle -= 2 * PI;
-	if (angle < 0) angle += 2 * PI;
 	return angle;
 }
 
@@ -661,7 +685,7 @@ void update_info()
 			bool is_cooker = false;
 			// 判断当前位置是炉子的情况
 			for (int i = 0; i < 4; ++i)
-				if (XYIPosition(x, y) == CookerPosition[i])
+				if (XYIPosition(x, y) == CookerPosition[i] && !obj_list.empty())
 				{
 					is_cooker = true;
 					now_bag.update_stove(i, obj_list);
@@ -696,22 +720,24 @@ void initialize()
 void debug_info()
 {
 	if (!getGameTime() % 100) return;
-	cout << "Now Position:  " << "( " << PlayerInfo.position.x << " " << PlayerInfo.position.y << " ) " << endl;
-	cout << "Target Position:  " << "( " << target_pos.x << " " << target_pos.y << " ) " << endl;
+	cout << "Now Time: " << now_time << endl;
+	cout << "Now Position: " << "( " << PlayerInfo.position.x << " " << PlayerInfo.position.y << " ) " << endl;
+	cout << "Target Position: " << "( " << target_pos.x << " " << target_pos.y << " ) " << endl;
 	cout << "Now Action(0: findFood,  1:setFood,  2:cookFood,  3:pendMission):  " << int(now_action) << endl;
 	cout << "Now Dish in Hand: " << PlayerInfo.dish << endl;
 	cout << "Now Target Dish: " << now_dish << endl;
 	cout << "Now Cook Time: " << cook_time << endl;
-	/*
+	cout << "Now Block Time: " << block_time << endl;
+	cout << "Face Dir(0:Right, 2:Up  4:Left, 6:Down): " << PlayerInfo.facingDirection << endl;
+
 	cout << "Now Bag Info: " << endl;
 	for (int i = 0; i < 4; ++i)
 	{
 		cout << "Bag " << i << ":  ";
 		for (int j = 0; j < now_bag.gridient[i].size(); ++j)
-			cout << now_bag.gridient[i][j] << endl;
+			cout << now_bag.gridient[i][j] << " ";
 		cout << endl;
 	}
-	*/
 	cout << endl;
 }
 
@@ -723,6 +749,8 @@ void play()
     while (true)
     {
         is_act = false;
+		if (now_pos == XYIPosition(PlayerInfo.position)) block_time++;
+		else block_time = 0;
         now_pos = PlayerInfo.position;
 		if (cook_time > 0)
 			cook_time -= getGameTime() - now_time;
@@ -751,7 +779,7 @@ void play()
 			{
 				int arrive_distance = 5;
 				for (int i = 0; i < 8; ++i)
-					if (now_pos == MissionPointAdjacentPosition[i]) arrive_distance = 1;
+					if (now_pos == MissionPointAdjacentPosition[i] && check_face()) arrive_distance = 1;
 				if (arrive_distance > 1)
 				{
 					target_pos = MissionPointPosition[target_mission_point[0]];
@@ -768,7 +796,7 @@ void play()
 		{
 			int arrive_distance = 5;
 			for (int i = 0; i < 9; ++i)
-				if (now_pos == CookerAdjacentPosition[i]) arrive_distance = 1;
+				if (now_pos == CookerAdjacentPosition[i] && check_face()) arrive_distance = 1;
 			if (arrive_distance > 1)
 			{
 				target_pos = CookerPosition[target_cooker[0]];
@@ -777,7 +805,7 @@ void play()
 			}
 			else
 			{
-				put(1.2, getAngle(), true);
+				put(1, getAngle(), true);
 				if (cook_time <= 0)
 				{
 					now_action = Action::cookFood;
@@ -789,7 +817,7 @@ void play()
 		}
 
 		// 烹饪食材
-		if (now_action == Action::cookFood)
+		if (now_action == Action::cookFood && !is_act)
 		{
 			if (now_dish == -1)
 			{
@@ -807,9 +835,22 @@ void play()
 				redundant = now_bag.get_what_is_redundant(now_dish, target_cooker[0]);
 				if (redundant.empty())
 				{
-					use(0, 0, 0);
-					now_action = Action::findFood;
-					cook_time = DishInfo[now_dish].CookTime;
+					int arrive_distance = 5;
+					for (int i = 0; i < 9; ++i)
+						if (now_pos == CookerAdjacentPosition[i] && check_face()) arrive_distance = 1;
+					if (arrive_distance > 1)
+					{
+						target_pos = CookerPosition[target_cooker[0]];
+						Path now_path = BFSFindPath(now_pos, target_pos);
+						start_move(now_path.move_list.top());
+					}
+					else
+					{
+						cout << "Cook!!!" << endl;
+						use(0, 0, 0);
+						now_action = Action::findFood;
+						cook_time = DishInfo[now_dish].CookTime;
+					}
 				}
 				else pick(false, Dish, redundant[0]);
 			}
@@ -823,7 +864,7 @@ void play()
 			if (!target_food.empty()) target_pos = target_food[0].position;
 			else target_pos = FoodPointPosition[target_food_point[0]];
 			for (int i = 0; i < 8; ++i)
-				if (now_pos == FoodPointAdjacentPosition[i]) arrive_distance = 1;
+				if (now_pos == FoodPointAdjacentPosition[i] && check_face()) arrive_distance = 1;
 			if (target_pos == now_pos) arrive_distance = 0;
 			if (arrive_distance > 1)
 			{
