@@ -9,7 +9,6 @@
 #include <assert.h>
 #include <queue>
 
-#define PLYAER 0 // 0为正常策略，1为强盗策略
 #define PI 3.141592653589793238462643383279
 
 using namespace THUAI3;
@@ -566,6 +565,7 @@ XYIPosition now_pos(0, 0), target_pos(0, 0);
 Bag now_bag;
 unsigned long long now_time = 0;
 int cook_time = -1, block_time = 0;
+int player = 0; // 玩家编号
 
 bool obj_compare(Obj a, Obj b)
 {
@@ -631,7 +631,7 @@ bool check_face()
 // 移动函数
 void start_move(char dir)
 {
-	if (block_time > 50)
+	if (block_time > 100)
 	{
 		if (dir == 'u') dir = 'd';
 		if (dir == 'd') dir = 'u';
@@ -639,7 +639,6 @@ void start_move(char dir)
 		if (dir == 'l') dir = 'r';
 		block_time = 0;
 	}
-	cout << "Move Dir: " << dir << endl;
 	if ((dir == 'u' || dir == 'd'))
 	{
 		if (double(PlayerInfo.position.y - now_pos.y) - 0.5 > 0.1) move(Down, 50);
@@ -678,6 +677,11 @@ void update_info()
 	std::sort(target_food_point.begin(), target_food_point.end(), food_point_compare);
 	std::sort(target_mission_point.begin(), target_mission_point.end(), mission_point_compare);
 	std::sort(target_dish.begin(), target_dish.end());
+	if (player)
+	{
+		target_food_point[0] = target_food_point[3];
+		player--;
+	}
     for (int x = 0; x < 50; ++x)
         for (int y = 0; y < 50; ++y)
         {
@@ -700,6 +704,7 @@ void update_info()
         }
     std::sort(target_food.begin(), target_food.end(), obj_compare);
     std::sort(target_tool.begin(), target_tool.end(), obj_compare);
+	if (cook_time > 1500 && cook_time < 2000) now_action = Action::setFood;
 }
 
 // 初始化信息
@@ -728,6 +733,7 @@ void debug_info()
 	cout << "Now Target Dish: " << now_dish << endl;
 	cout << "Now Cook Time: " << cook_time << endl;
 	cout << "Now Block Time: " << block_time << endl;
+	cout << "Now Score: " << PlayerInfo.score << endl;
 	cout << "Face Dir(0:Right, 2:Up  4:Left, 6:Down): " << PlayerInfo.facingDirection << endl;
 
 	cout << "Now Bag Info: " << endl;
@@ -762,10 +768,15 @@ void play()
         {
 			if (check_Mission(PlayerInfo.dish))
 				now_action = Action::pendMission;
+			else if (cook_time > 0 && cook_time < 2000) now_action = Action::setFood;
 			else if (now_action == Action::cookFood || !check_need(PlayerInfo.dish))
 			{
-				put(0, getAngle(), true);
-				if (now_action != Action::cookFood) now_action = Action::findFood;
+				if (now_action != Action::cookFood)
+				{
+					now_action = Action::findFood;
+					put(2, getAngle(), true);
+				}
+				else put(0, getAngle(), true);
 				is_act = true;
 			}
 			else now_action = Action::setFood;
@@ -880,6 +891,6 @@ void play()
 		}
 
 		debug_info();
-        while (getGameTime() - now_time < 50); // 等待下一帧到来
+        while (getGameTime() - now_time < 55); // 等待下一帧到来
     }
 }

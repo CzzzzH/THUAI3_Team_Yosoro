@@ -152,6 +152,10 @@ void CAPI::SendChatMessage(string message)
 	Message* mes3 = new Message(-1, mes2);
 	Message* mes = new Message(-1, mes3);
 	Send(mes);
+	//delete mes1;
+	//delete mes2;
+	//delete mes3;
+	//delete mes;
 }
 
 void CAPI::SendCommandMessage(MessageToServer* message)
@@ -160,6 +164,9 @@ void CAPI::SendCommandMessage(MessageToServer* message)
 	Message* mes3 = new Message(-1, mes2);
 	Message* mes = new Message(-1, mes3);
 	Send(mes);
+	//delete mes2;
+	//delete mes3;
+	//delete mes;
 }
 
 void CAPI::CreateObj(int64_t id, Protobuf::MessageToClient* message)
@@ -192,6 +199,7 @@ void CAPI::MoveObj(int64_t id, Protobuf::MessageToClient* message, std::unordere
 	MapInfo::obj_list[id]->position.x = message->gameobjectlist().at(id).positionx();
 	MapInfo::obj_list[id]->position.y = message->gameobjectlist().at(id).positiony();
 	MapInfo::obj_list[id]->facingDiretion = message->gameobjectlist().at(id).direction();
+	MapInfo::obj_list[id]->team = message->gameobjectlist().at(id).team();
 
 	MapInfo::mutex_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y]->lock();
 	MapInfo::obj_map[(int)MapInfo::obj_list[id]->position.x][(int)MapInfo::obj_list[id]->position.y].insert(std::pair<int64_t, shared_ptr< Obj>>(id, MapInfo::obj_list[id]));
@@ -220,7 +228,7 @@ void CAPI::UpdateInfo(Protobuf::MessageToClient* message)
 	PlayerInfo.sightRange = PlayerInfo._sightRange = self.sightrange();
 	PlayerInfo.dish = self.dishtype();
 	PlayerInfo.tool = self.tooltype();
-	PlayerInfo.recieveText = self.speaktext();
+	PlayerInfo.recieveText = self.recievetext();
 	if (message->scores().contains(PlayerInfo._team))
 		PlayerInfo.score = message->scores().at(PlayerInfo._team);
 
@@ -269,6 +277,7 @@ void CAPI::Initialize()
 bool CAPI::ConnectServer(const char* address, USHORT port)
 {
 	ip = address;
+	this->port = port;
 	while (!pclient->IsConnected())
 	{
 		Debug(1, "ClientSide: Connecting to server ");
@@ -305,6 +314,7 @@ void CAPI::Refresh()
 	Message* mes2 = new Message(AgentId, mes1);
 	Message* mes = new Message(-1, mes2);
 	Send(mes);
+	//delete mes;
 }
 
 bool CAPI::Send(const byte* pBuffer, int iLength, int iOffset)

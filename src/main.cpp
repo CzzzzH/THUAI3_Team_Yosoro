@@ -14,6 +14,7 @@
 #include <mutex>
 #include "player.h"
 #include "API.h"
+#include "OS_related.h"
 
 using namespace std;
 
@@ -41,16 +42,16 @@ int main(int argc, char* argv[])
 	int agent_port = atoi(argv[2]);
 	API.Initialize();
 	API.ConnectServer(agent_ip, agent_port);
-	//pthread_t pt;
-	//pthread_create(&pt, NULL, Ping, NULL);
-	//pthread_detach(pt);
+	pthread_t pt;
+	pthread_create(&pt, NULL, Ping, NULL);
+	pthread_detach(pt);
 	string message = "Connected!";
 
 	DebugFunc = DebugSilently;
 
 	while (!GameRunning)
 	{
-		_sleep(1);
+		Sleep(1);
 	}
 	THUAI3::initializeGameTime();
 	while (GameRunning)
@@ -59,19 +60,6 @@ int main(int argc, char* argv[])
 	}
 	getchar();
 	API.Quit();
-
-	/*
-	while (API.IsConnected())
-	{
-		if (message == "quit")
-		{
-			API.Quit();
-		}
-		else
-			API.SendChatMessage(message + " from Agent " + to_string(API.AgentId) + " Player " + to_string(API.PlayerId));
-		cin >> message;
-	}
-	*/
 	cout << "Disconnected from server.\n";
 	getchar();
 	return 0;
