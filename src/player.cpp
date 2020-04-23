@@ -24,6 +24,7 @@
 #include <stack>
 #include <assert.h>
 #include <queue>
+#include <cmath>
 
 #define PI 3.141592653589793238462643383279
 
