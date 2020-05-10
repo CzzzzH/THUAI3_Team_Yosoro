@@ -80,7 +80,7 @@ std::vector<DishType> target_dish; // 任务目标含有的菜品集合（直接
 std::vector<DishType> redundant;   // 炉子上冗余的食材集合
 
 unsigned long long now_time = 0;   // 当前时间
-int cook_time = 0, block_time = 0; // 菜品烹饪剩余时间，走路被阻塞时间（用于防被卡）
+int block_time = 0; // 菜品烹饪剩余时间，走路被阻塞时间（用于防被卡）
 bool is_act;                       // 是否已经行动（避免进行不必要的冗余操作）
 
 bool init_flag = false; // 初始化
@@ -206,30 +206,6 @@ int GameMap[MAPHEIGHT][MAPWIDTH] = {
 };
 
 #endif // _USE_TEST_MAP_
-
-/* 暂时不用了 动态在游戏中读取 
-
-const XYIPosition CookerAdjacentPosition[9]{ XYIPosition(7, 24), XYIPosition(8, 25),
-XYIPosition(24, 38), XYIPosition(25, 37), XYIPosition(25, 39), XYIPosition(33, 17),
-XYIPosition(33, 19), XYIPosition(41, 27), XYIPosition(40, 28) };
-
-const XYIPosition CookerPosition[4]{ XYIPosition(8, 24), XYIPosition(25, 38),
-XYIPosition(33, 18), XYIPosition(41, 28) };
-
-const XYIPosition FoodPointAdjacentPosition[12]{ XYIPosition(7, 40), XYIPosition(7, 42),
-XYIPosition(6, 41), XYIPosition(8, 41), XYIPosition(24, 5), XYIPosition(26, 5),
-XYIPosition(25, 4), XYIPosition(25, 6), XYIPosition(41, 40), XYIPosition(43, 40),
-XYIPosition(42, 39), XYIPosition(42, 41) };
-
-const XYIPosition FoodPointPosition[3]{ XYIPosition(7, 41), XYIPosition(25, 5), XYIPosition(42, 40) };
-
-const XYIPosition MissionPointPosition[4]{ XYIPosition(24, 24), XYIPosition(24, 25), XYIPosition(25, 24), XYIPosition(25, 25) };
-
-const XYIPosition MissionPointAdjacentPosition[8]{ XYIPosition(23, 24), XYIPosition(23, 25), 
-XYIPosition(24, 23), XYIPosition(25, 23), XYIPosition(26, 24), XYIPosition(26, 25),
-XYIPosition(24, 26), XYIPosition(25, 26)};
-
-*/
 
 /*****************************************************************************/
 
@@ -492,9 +468,11 @@ class Bag
 {
 public:
     deque<deque<DishType>> gridient; //已知材料
+    vector<int> cook_time;
     Bag()
     {
         gridient.resize(4, deque<DishType>{});
+        cook_time.resize(4);
     }
 
     /*
@@ -660,13 +638,6 @@ bool food_point_compare(int a, int b)
 // 炉子的比较函数 **待完善**
 bool cooker_compare(int a, int b)
 {
-    if (player == 1) //目前强制1号玩家使用中间没人用的炉子
-    {
-        if (a == 1)
-            return true;
-        if (b == 1)
-            return false;
-    }
     if (now_bag.gridient[a].size() != now_bag.gridient[b].size())
         return now_bag.gridient[a].size() > now_bag.gridient[b].size();
     auto length_a = BFSFindPath(now_pos, CookerPosition[a]).path_length;
