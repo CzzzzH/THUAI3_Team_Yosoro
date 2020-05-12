@@ -363,3 +363,10 @@ healthchecksdb
 
 # Backup folder for Package Reference Convert tool in Visual Studio 2017
 MigrationBackup/
+/2333.includes
+/2333.files
+/2333.cxxflags
+/2333.creator
+/2333.config
+/2333.cflags
+/src/player.cpp.autosave

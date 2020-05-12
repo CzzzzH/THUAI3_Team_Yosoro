@@ -4,6 +4,10 @@
 #include <list>
 #include <map>
 using namespace std;
+
+/* 已搬运至Player.cpp */
+
+#ifdef _LOCAL_DEBUG_
 enum DishType {//同原来预设enum
 	DishEmpty = 0,
 	//以下为食材
@@ -534,3 +538,5 @@ int main() {//测试函数功能
 	ObjValue best = test.parseObject(obj_list);
 	cout << best.object.dish << " " << best.value;
 }
+
+#endif // _LOCAL_DEBUG_

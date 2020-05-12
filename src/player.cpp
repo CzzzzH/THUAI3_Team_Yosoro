@@ -51,6 +51,13 @@ struct Path
     int path_length;
 };
 
+// 物品价值
+struct ObjValue
+{
+    Obj object;
+    int value;
+};
+
 // 整数坐标结构 **待完善**
 struct XYIPosition
 {
@@ -61,86 +68,39 @@ struct XYIPosition
     XYIPosition(const XYIPosition &pos) : x(pos.x), y(pos.y) {}
     XYIPosition(const XYPosition &pos) : x(int(pos.x)), y(int(pos.y)) {}
     bool operator==(const XYIPosition &t) { return (x == t.x && y == t.y); }
-    bool isAdjacent(const XYIPosition& t) { return (t.x - x) * (t.x - x) + (t.y - y) * (t.y - y) == 1; }
+    bool operator!=(const XYIPosition &t) { return (x != t.x || y != t.y); }
+    bool isAdjacent(const XYIPosition &t) { return (t.x - x) * (t.x - x) + (t.y - y) * (t.y - y) == 1; }
 };
 
 /* ------------------------------------- 重要的全局变量 ------------------------------------- */
 
 int player = 0;                                       // 玩家编号
-Protobuf::Talent initTalent = Protobuf::Talent::Cook; // 玩家天赋
+Talent initTalent = Protobuf::Talent::Cook; // 玩家天赋
 
 Action now_action = Action::findFood, next_action = Action::findFood; // 当前 / 下一个状态
 DishType now_dish = DishEmpty;                                        // 当前准备做的菜品（包含中间菜品）
 
 XYIPosition now_pos(0, 0), target_pos(0, 0);                             // 当前位置、目标位置的整数坐标
-std::vector<Obj> target_food, target_tool;                               // 目标食物、道具的集合
-std::vector<int> target_cooker, target_food_point, target_mission_point; // 各种重要位置的*序号*集合（主要用于排序）
-std::vector<XYIPosition> map_block;
-std::vector<DishType> target_dish; // 任务目标含有的菜品集合（直接从task_list搬过来得到）
-std::vector<DishType> redundant;   // 炉子上冗余的食材集合
+ObjValue target_obj = {Obj({-1, -1}, Block), -1};                             // 目标食物、道具的集合
+vector<int> target_cooker, target_food_point, target_mission_point; // 各种重要位置的*序号*集合（主要用于排序）
+vector<XYIPosition> map_block;
+vector<DishType> target_dish; // 任务目标含有的菜品集合（直接从task_list搬过来得到）
+vector<DishType> redundant;   // 炉子上冗余的食材集合
 
-unsigned long long now_time = 0;   // 当前时间
-int block_time = 0; // 菜品烹饪剩余时间，走路被阻塞时间（用于防被卡）
-bool is_act;                       // 是否已经行动（避免进行不必要的冗余操作）
+unsigned long long now_time = 0; // 当前时间
+int block_time = 0;              // 走路被阻塞时间（用于防被卡）
+vector<int> cook_time, generate_time; // 菜品烹饪剩余时间和食物生成时间
+vector<bool> is_fertilized, is_pot;
+
+bool is_act;                     // 是否已经行动（避免进行不必要的冗余操作）
 
 bool init_flag = false; // 初始化
 
 /* 重要地点的位置信息 */
-std::vector<XYIPosition> CookerPosition, FoodPointPosition, MissionPointPosition;
-std::vector<XYIPosition> CookerAdjacentPosition, FoodPointAdjacentPosition, MissionPointAdjacentPosition;
+vector<XYIPosition> CookerPosition, FoodPointPosition, MissionPointPosition;
+vector<XYIPosition> CookerAdjacentPosition, FoodPointAdjacentPosition, MissionPointAdjacentPosition;
 
 /* ------------------------------------- FindPath.cpp ------------------------------------- */
-
-/*****************************************************************************/
-
-/* Used for offline debug, disable when use */
-//#define _ANTONY_LOCAL_DEBUG_
-/* Use test map instead of large map */
-//#define _USE_TEST_MAP_
-
-/*****************************************************************************/
-
-#ifdef _ANTONY_LOCAL_DEBUG_
-
-struct XYPosition
-{
-    int x, y;
-    XYPosition(int x, int y) : x(x), y(y) {}
-};
-
-#endif // _ANTONY_LOCAL_DEBUG_
-
-/*****************************************************************************/
-
-/* Map-related data are stored below */
-
-#ifdef _USE_TEST_MAP_
-
-/* The height of the map */
-const int MAPHEIGHT = 10;
-
-/* The width of the map */
-const int MAPWIDTH = 10;
-
-/* Map used in local debug */
-/* x-axis: vertical y-axis: horizontal */
-bool GameMap[MAPHEIGHT][MAPWIDTH] = {
-    /* 0  1  2  3  4  5  6  7  8  9         */
-    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, /* 0 */
-    {1, 0, 0, 0, 0, 1, 1, 0, 0, 1}, /* 1 */
-    {1, 0, 1, 1, 1, 0, 0, 0, 1, 1}, /* 2 */
-    {1, 0, 0, 0, 1, 0, 0, 0, 1, 1}, /* 3 */
-    {1, 1, 1, 0, 1, 1, 1, 1, 1, 1}, /* 4 */
-    {1, 1, 0, 1, 1, 0, 1, 1, 1, 1}, /* 5 */
-    {0, 1, 0, 1, 0, 0, 1, 0, 1, 1}, /* 6 */
-    {0, 1, 0, 1, 1, 1, 1, 0, 1, 1}, /* 7 */
-    {1, 1, 1, 1, 1, 1, 1, 0, 1, 1}, /* 8 */
-    {1, 0, 1, 1, 1, 1, 0, 0, 0, 1}  /* 9 */
-};
-
-#endif // _USE_TEST_MAP_
-
-#ifndef _USE_TEST_MAP_
 
 /* The height of the map */
 const int MAPHEIGHT = 50;
@@ -151,7 +111,7 @@ const int MAPWIDTH = 50;
 /* Map used in real game */
 /* x-axis: vertical y-axis: horizontal */
 int GameMap[MAPHEIGHT][MAPWIDTH] = {
-  /* 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 */
+    /* 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 */
     {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5}, /* 00 */
     {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}, /* 01 */
     {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}, /* 02 */
@@ -202,14 +162,8 @@ int GameMap[MAPHEIGHT][MAPWIDTH] = {
     {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}, /* 47 */
     {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}, /* 48 */
     {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5}  /* 49 */
-/*   00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49  */
+    /*   00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49  */
 };
-
-#endif // _USE_TEST_MAP_
-
-/*****************************************************************************/
-
-/* Algorithms provided in FindPath.cpp */
 
 /* Get distance square */
 int GetSquareDistance(XYIPosition from, XYIPosition to)
@@ -310,131 +264,6 @@ Path BFSFindPath(XYIPosition start, XYIPosition end)
     return bfs_path;
 }
 
-/* Find the nearest cooker */
-Path FindPath2NearestCooker(XYPosition player_position,
-                            char &relative_position)
-{
-    /* Truncate data */
-    player_position.x = int(player_position.x);
-    player_position.y = int(player_position.y);
-    /* Initialize */
-    Path optimal_path;
-    XYIPosition destination(-1, -1);
-    int min_path_length = 1000;
-    /* Find path to a point adjacent to a cooker i.e. with distance 1 */
-    for (XYIPosition cur_destination_pos : CookerAdjacentPosition)
-    {
-        Path cur_path = BFSFindPath(player_position, cur_destination_pos);
-        if (cur_path.path_length < min_path_length)
-        {
-            optimal_path = cur_path;
-            destination = cur_destination_pos;
-            min_path_length = cur_path.path_length;
-        }
-    }
-    /* Check cooker position relative to the point */
-    assert(destination.x != -1 && destination.y != -1);
-    for (XYIPosition cooker_pos : CookerPosition)
-    {
-        if (GetSquareDistance(cooker_pos, destination) == 1)
-        {
-            int relative_x = cooker_pos.x - destination.x;
-            int relative_y = cooker_pos.y - destination.y;
-            if (relative_x == -1 && relative_y == 0)
-            {
-                relative_position = 'u';
-            }
-            else if (relative_x == 1 && relative_y == 0)
-            {
-                relative_position = 'd';
-            }
-            else if (relative_x == 0 && relative_y == -1)
-            {
-                relative_position = 'l';
-            }
-            else if (relative_x == 0 && relative_y == 1)
-            {
-                relative_position = 'r';
-            }
-            else
-            {
-                assert(false);
-            }
-            break;
-        }
-    }
-    return optimal_path;
-}
-
-/* Find the nearest food point */
-Path FindPath2NearestFoodPoint(XYPosition player_position,
-                               char &relative_position)
-{
-    /* Truncate data */
-    player_position.x = int(player_position.x);
-    player_position.y = int(player_position.y);
-    /* Initialize */
-    Path optimal_path;
-    XYIPosition destination(-1, -1);
-    int min_path_length = 1000;
-    /* Find path to a point adjacent to a food point i.e. with distance 1 */
-    for (XYIPosition cur_destination_pos : FoodPointAdjacentPosition)
-    {
-        Path cur_path = BFSFindPath(player_position, cur_destination_pos);
-        if (cur_path.path_length < min_path_length)
-        {
-            optimal_path = cur_path;
-            destination = cur_destination_pos;
-            min_path_length = cur_path.path_length;
-        }
-    }
-    /* Check food point position relative to the point */
-    assert(destination.x != -1 && destination.y != -1);
-    for (XYIPosition foodpoint_pos : FoodPointPosition)
-    {
-        if (GetSquareDistance(foodpoint_pos, destination) == 1)
-        {
-            int relative_x = foodpoint_pos.x - destination.x;
-            int relative_y = foodpoint_pos.y - destination.y;
-            if (relative_x == -1 && relative_y == 0)
-            {
-                relative_position = 'u';
-            }
-            else if (relative_x == 1 && relative_y == 0)
-            {
-                relative_position = 'd';
-            }
-            else if (relative_x == 0 && relative_y == -1)
-            {
-                relative_position = 'l';
-            }
-            else if (relative_x == 0 && relative_y == 1)
-            {
-                relative_position = 'r';
-            }
-            else
-            {
-                assert(false);
-            }
-            break;
-        }
-    }
-    return optimal_path;
-}
-
-/*****************************************************************************/
-
-#ifdef _ANTONY_LOCAL_DEBUG_
-
-int main()
-{
-    Path move1 = BFSFindPath(XYPosition(1, 1), XYPosition(46, 37));
-    char relative_pos;
-    Path move2 = FindPath2NearestCooker(XYPosition(1, 1), relative_pos);
-}
-
-#endif // _ANTONY_LOCAL_DEBUG_
-
 /*************************************END*************************************/
 
 /* ------------------------------------- FoodAnalysis.cpp ------------------------------------- */
@@ -464,11 +293,131 @@ deque<deque<DishType>> table = {
     {Beef, Lettuce, Bread},   //Hamburger
 };
 
+deque<int> tool_score = //10000代表马上、一定要捡的东西，包括立即使用物品、陷阱，百利而无害
+    {
+        0,     //没有物品
+        1000,  //虎头鞋
+        10000, //加速
+        10000, //加力量
+        1000,  //望远镜
+        1000,  //调料
+        1000,  //肥料
+        1000,  //护心镜
+        10000, //传送门
+        10000, //胶水
+        10000, //地雷
+        10000, //陷阱
+        10000, //闪光炸弹
+        10000, //锤子
+        10000, //弓箭
+};
+
+deque<int> one_time_use = {2, 3, 8, 9, 10, 11, 12, 13, 14}; //一次性道具
+
+deque<deque<int>> occupation_tool = {
+    {}, //空
+    {
+        //跑者道具分数加成
+        0, //没有物品
+        1, //虎头鞋
+        1, //加速
+        1, //加力量
+        1, //望远镜
+        1, //调料
+        1, //肥料
+        1, //护心镜
+        1, //传送门
+        1, //胶水
+        1, //地雷
+        1, //陷阱
+        1, //闪光炸弹
+        1, //锤子
+        1, //弓箭
+    },
+    {
+        //力量男道具分数加成
+        0,  //没有物品
+        1,  //虎头鞋
+        1,  //加速
+        1,  //加力量
+        1,  //望远镜
+        1,  //调料
+        1,  //肥料
+        1,  //护心镜
+        1,  //传送门
+        1,  //胶水
+        1,  //地雷
+        1,  //陷阱
+        1,  //闪光炸弹
+        10, //锤子
+        10, //弓箭
+    },
+    {
+        //厨师道具分数加成
+        0,  //没有物品
+        1,  //虎头鞋
+        1,  //加速
+        1,  //加力量
+        1,  //望远镜
+        10, //调料
+        1,  //肥料
+        1,  //护心镜
+        1,  //传送门
+        1,  //胶水
+        1,  //地雷
+        1,  //陷阱
+        1,  //闪光炸弹
+        1,  //锤子
+        1,  //弓箭
+    },
+    {
+        //技工道具分数加成
+        0,  //没有物品
+        1,  //虎头鞋
+        1,  //加速
+        1,  //加力量
+        1,  //望远镜
+        1,  //调料
+        1,  //肥料
+        1,  //护心镜
+        10, //传送门
+        1,  //胶水
+        1,  //地雷
+        1,  //陷阱
+        1,  //闪光炸弹
+        1,  //锤子
+        1,  //弓箭
+    },
+    {
+        //幸运男孩道具分数加成
+        0, //没有物品
+        1, //虎头鞋
+        1, //加速
+        1, //加力量
+        1, //望远镜
+        1, //调料
+        1, //肥料
+        1, //护心镜
+        1, //传送门
+        1, //胶水
+        1, //地雷
+        1, //陷阱
+        1, //闪光炸弹
+        1, //锤子
+        1, //弓箭
+    }};
+
+/*
+物品比较
+思路：
+道具优先级高于食材，一次性道具优于常驻型道具，如果返回发现是一次性道具（调用函数is_one_time_use）
+周围还有其它道具，就捡起来把它用掉再捡其它道具，如果返回 < 0，代表不要捡
+*/
+
 class Bag
 {
 public:
     deque<deque<DishType>> gridient; //已知材料
-    vector<int> cook_time;
     Bag()
     {
         gridient.resize(4, deque<DishType>{});
@@ -501,11 +450,20 @@ public:
 
     void update_stove(int x, list<Obj> finding)
     { //更新灶台x上的食材
+        bool flag = false;
         gridient[x].clear();
         for (auto it = finding.begin(); it != finding.end(); ++it)
         {
+            if (it->objType == Tool && it->tool == Condiment)
+                is_pot[x] = true;
             if (it->objType == Dish)
                 gridient[x].push_back(it->dish);
+            if (it->objType == CookingDish && cook_time[x] == 0)
+            {
+                flag = true; // 有食物正在被做
+                cook_time[x] += 10000; // 由于不知道食物完成时间，预设一个10秒
+            }
+            else cook_time[x] = 0; // 没有食物正在被做
         }
     }
 
@@ -598,6 +556,95 @@ public:
         }
         return DishEmpty; //没有可合成菜品或中间产品
     }
+
+    /*
+    分析食物的分数
+    每个炉子中任务列表中的食物分数 * dish由多少食材合成 / 所需食材数量
+    */
+    int parse_food(DishType dish)
+    {
+        bool needed = false;
+        for (int i = 0; i < target_dish.size(); ++i)
+        {
+            if (is_need(target_dish[i], dish))
+            {
+                needed = true;
+            }
+        }
+        if (!needed)
+            return -1;
+        int rc = 0;
+        int importance = table[dish].size() + 1;
+        for (int i = 0; i < target_dish.size(); ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                if (is_need(target_dish[i], dish))
+                {
+                    int source_num = get_what_is_need(target_dish[i], j).size();
+                    rc += Constant::DishInfo.at(target_dish[i]).Score * importance / source_num;
+                }
+            }
+        }
+        return rc;
+    }
+
+    /*
+    分析道具重要性
+    如果是一次性道具，优先捡起来把它用掉（免得被别人拿来用）
+    注意身上如果是一次性道具要换就把它使用掉
+    */
+    int parse_tool(ToolType tool)
+    {
+        return tool_score[tool] + occupation_tool[PlayerInfo.talent][tool];
+    }
+    /*
+    分析物品
+    如果小于0则不捡
+    */
+    ObjValue parseObject(std::vector<Obj> obj_list)
+    {
+        deque<int> score;
+        score.resize(obj_list.size(), 0);
+        ObjValue best = {obj_list[0], -1};
+        best.value = -1;
+        int cur_food = parse_food(PlayerInfo.dish);
+        int cur_tool = parse_tool(PlayerInfo.tool);
+        for (int i = 0; i < obj_list.size(); ++i)
+        {
+            if (obj_list[i].objType == 2)
+            {
+                score[i] += parse_food(obj_list[i].dish);
+                if (cur_food > score[i])
+                    score[i] = -1;
+            }
+            else if (obj_list[i].objType == 3)
+            {
+                score[i] += parse_tool(obj_list[i].tool);
+                if (cur_tool < 10000)
+                { //是常备道具
+                    if (score[i] < cur_tool)
+                        score[i] = -1;
+                }
+            }
+            if (score[i] > best.value)
+            {
+                best.object = obj_list[i];
+                best.value = score[i];
+            }
+        }
+        return best;
+    }
+
+    bool is_one_time_use(ToolType tool)
+    { //是否为一次性道具
+        for (int i = 0; i < one_time_use.size(); ++i)
+        {
+            if (tool == one_time_use[i])
+                return true;
+        }
+        return false;
+    }
 };
 
 Bag now_bag;
@@ -612,24 +659,11 @@ bool check_Mission(DishType target_dish)
     return false;
 }
 
-// 食材和道具的比较函数 **待完善**
-bool obj_compare(Obj a, Obj b)
-{
-    // 优先拿成品
-    if (check_Mission(a.dish))
-        return true;
-    if (check_Mission(b.dish))
-        return false;
-
-    // 否则看距离
-    auto length_a = BFSFindPath(now_pos, a.position).path_length;
-    auto length_b = BFSFindPath(now_pos, b.position).path_length;
-    return length_a < length_b;
-}
-
 // 食物产生点的比较函数 **待完善**
 bool food_point_compare(int a, int b)
 {
+    if (generate_time[a] != generate_time[b])
+        return generate_time[a] < generate_time[b];
     auto length_a = BFSFindPath(now_pos, FoodPointPosition[a]).path_length;
     auto length_b = BFSFindPath(now_pos, FoodPointPosition[b]).path_length;
     return length_a < length_b;
@@ -665,18 +699,26 @@ bool check_need(DishType target_dish)
     return false;
 }
 
-// 检查使用use函数的时候面向是否正确
-bool check_face()
+// 检查是否满足使用use函数的条件
+bool ready_to_use()
 {
     int x = target_pos.x - now_pos.x;
     int y = target_pos.y - now_pos.y;
-    if (x == 1 && PlayerInfo.facingDirection == Right)
+    if (x == 1 && y == 0 && PlayerInfo.facingDirection == Right)
         return true;
-    if (x == -1 && PlayerInfo.facingDirection == Left)
+    if (x == -1 && y == 0 && PlayerInfo.facingDirection == Left)
         return true;
-    if (y == 1 && PlayerInfo.facingDirection == Up)
+    if (y == 1 && x == 0 && PlayerInfo.facingDirection == Up)
         return true;
-    if (y == -1 && PlayerInfo.facingDirection == Down)
+    if (y == -1 && x == 0 && PlayerInfo.facingDirection == Down)
+        return true;
+    if (x == 1 && y == 1 && PlayerInfo.facingDirection == RightUp)
+        return true;
+    if (x == 1 && y == -1 && PlayerInfo.facingDirection == RightDown)
+        return true;
+    if (x == -1 && y == 1 && PlayerInfo.facingDirection == LeftUp)
+        return true;
+    if (x == -1 && y == -1 && PlayerInfo.facingDirection == LeftDown)
         return true;
     return false;
 }
@@ -707,9 +749,9 @@ void start_move(char dir)
     // 朝四个方向的移动，目前是会强制使人走在格点中心，以减少被卡的概率 **待完善**
     if ((dir == 'u' || dir == 'd'))
     {
-        if (double(PlayerInfo.position.y - now_pos.y) - 0.5 > 0.1)
+        if (double(PlayerInfo.position.y - now_pos.y) - 0.5 > 0.2)
             move(Down, 50);
-        else if (double(PlayerInfo.position.y - now_pos.y) - 0.5 < -0.1)
+        else if (double(PlayerInfo.position.y - now_pos.y) - 0.5 < -0.2)
             move(Up, 50);
         else if (dir == 'u')
             move(Left, 50);
@@ -719,9 +761,9 @@ void start_move(char dir)
     }
     if ((dir == 'l' || dir == 'r'))
     {
-        if (double(PlayerInfo.position.x - now_pos.x) - 0.5 > 0.1)
+        if (double(PlayerInfo.position.x - now_pos.x) - 0.5 > 0.2)
             move(Left, 50);
-        else if (double(PlayerInfo.position.x - now_pos.x) - 0.5 < -0.1)
+        else if (double(PlayerInfo.position.x - now_pos.x) - 0.5 < -0.2)
             move(Right, 50);
         else if (dir == 'r')
             move(Up, 50);
@@ -734,44 +776,52 @@ void start_move(char dir)
 // 更新地图信息以及目标列表
 void update_info()
 {
-    target_food.clear();
-    target_tool.clear();
+    target_obj.value = -1;
     target_dish.clear();
     map_block.clear();
     for (auto it = task_list.begin(); it != task_list.end(); ++it)
         target_dish.push_back(*it);
+    vector<Obj> all_obj;
     for (int x = 0; x < 50; ++x)
         for (int y = 0; y < 50; ++y)
         {
             // 获得地图上的元素（MapInfo::get_mapcell这个函数非常重要，是一切物体信息的来源（**注意**：只能得到视野内的物体信息）
             auto obj_list = MapInfo::get_mapcell(x, y);
-            bool is_cooker = false;
+            bool is_cook = false;
 
             // 判断当前位置是炉子的情况，不把炉子上的食材添加到目标列表，仅更新背包
             for (int i = 0; i < 4; ++i)
+            {
                 if (XYIPosition(x, y) == CookerPosition[i] && !obj_list.empty())
                 {
-                    is_cooker = true;
+                    is_cook = true;
                     now_bag.update_stove(i, obj_list);
                 }
-            if (is_cooker)
-                continue;
+                if (XYIPosition(x, y) == FoodPointPosition[i])
+                {
+                    if (obj_list.empty()) generate_time[i] = 15000;
+                    else generate_time[i] = 0;
+                }
+            }
+            if (is_cook) continue;
 
-            // 把需要的食物添加到目标列表里
+            // 更新地图block
             for (auto it = obj_list.begin(); it != obj_list.end(); ++it)
             {
                 if (it->objType == People)
                     map_block.push_back(XYIPosition(x, y));
-                if (it->objType == Dish && check_need(it->dish) && it->blockType == 0)
-                    target_food.push_back(*it);
+                if (it->objType == Dish || it->objType == Tool)
+                    all_obj.push_back(*it);
             }
         }
     std::sort(target_cooker.begin(), target_cooker.end(), cooker_compare);
     std::sort(target_food_point.begin(), target_food_point.end(), food_point_compare);
     std::sort(target_mission_point.begin(), target_mission_point.end(), mission_point_compare);
     std::sort(target_dish.begin(), target_dish.end());
-    std::sort(target_food.begin(), target_food.end(), obj_compare);
-    std::sort(target_tool.begin(), target_tool.end(), obj_compare);
+    target_obj = now_bag.parseObject(all_obj);
+    // 假设东西快煮完了，就赶紧跑回去拿以免被偷或烧焦 **待完善**
+    if (cook_time[target_cooker[0]] > 0 && cook_time[target_cooker[0]] < 2000 && next_action == Action::findFood)
+        next_action = Action::setFood;
 }
 
 // 更新重要状态
@@ -781,13 +831,19 @@ void update_state()
     now_pos = PlayerInfo.position;
     if (now_pos == XYIPosition(PlayerInfo.position))
         block_time += getGameTime() - now_time;
-    if (cook_time > 0)
-        cook_time -= getGameTime() - now_time;
+  
+    // 更新炉子计时和食物生产点计时
+    for (int i = 0; i < cook_time.size(); ++i)
+    {
+        if (cook_time[i] > 0)
+            cook_time[i] -= getGameTime() - now_time;
+    }
+    for (int i = 0; i < generate_time.size(); ++i)
+    {
+        if (generate_time[i] > 0)
+            generate_time[i] -= getGameTime() - now_time;
+    }
     now_time = getGameTime();
-
-    // 假设东西快煮完了，就赶紧跑回去拿以免被偷或烧焦 **待完善**
-    if (cook_time > 0 && cook_time < 2000 && next_action == Action::findFood)
-        next_action = Action::setFood;
 
     // 更新状态
     now_action = next_action;
@@ -800,21 +856,28 @@ void initialize()
     for (int i = 0; i < MAPHEIGHT; ++i)
         for (int j = 0; j < MAPWIDTH; ++j)
         {
-            if (GameMap[i][j] == 1) MissionPointPosition.push_back({ i, j });
-            if (GameMap[i][j] == 2) FoodPointPosition.push_back({ i, j });
-            if (GameMap[i][j] == 3) CookerPosition.push_back({ i, j });
+            if (GameMap[i][j] == 1)
+                MissionPointPosition.push_back({i, j});
+            if (GameMap[i][j] == 2)
+                FoodPointPosition.push_back({i, j});
+            if (GameMap[i][j] == 3)
+                CookerPosition.push_back({i, j});
         }
-    
+
     for (int i = 0; i < MAPHEIGHT; ++i)
         for (int j = 0; j < MAPWIDTH; ++j)
         {
-            if (GameMap[i][j] != 0) continue;
+            if (GameMap[i][j] != 0)
+                continue;
             for (int k = 0; k < FoodPointPosition.size(); ++k)
-                if (FoodPointPosition[k].isAdjacent({ i, j })) FoodPointAdjacentPosition.push_back({ i, j });
+                if (FoodPointPosition[k].isAdjacent({i, j}))
+                    FoodPointAdjacentPosition.push_back({i, j});
             for (int k = 0; k < CookerPosition.size(); ++k)
-                if (CookerPosition[k].isAdjacent({ i, j })) CookerAdjacentPosition.push_back({ i, j });
+                if (CookerPosition[k].isAdjacent({i, j}))
+                    CookerAdjacentPosition.push_back({i, j});
             for (int k = 0; k < MissionPointPosition.size(); ++k)
-                if (MissionPointPosition[k].isAdjacent({ i, j })) MissionPointAdjacentPosition.push_back({ i, j });
+                if (MissionPointPosition[k].isAdjacent({i, j}))
+                    MissionPointAdjacentPosition.push_back({i, j});
         }
 
     target_cooker.resize(CookerPosition.size());
@@ -826,6 +889,10 @@ void initialize()
         target_food_point[i] = i;
     for (int i = 0; i < target_mission_point.size(); ++i)
         target_mission_point[i] = i;
+
+    cook_time.resize(CookerPosition.size());
+    generate_time.resize(FoodPointPosition.size());
+    is_fertilized.resize(FoodPointPosition.size());
 }
 
 // 输出调试信息
@@ -842,7 +909,7 @@ void debug_info()
     cout << "Now Action(0: findFood,  1:setFood,  2:cookFood,  3:pendMission):  " << int(now_action) << endl;
     cout << "Now Dish in Hand: " << PlayerInfo.dish << endl;
     cout << "Now Target Dish: " << now_dish << endl;
-    cout << "Now Cook Time: " << cook_time << endl;
+    cout << "Now Cook Time: " << cook_time[target_cooker[0]] << endl;
     cout << "Now Block Time: " << block_time << endl;
     cout << "Now Score: " << PlayerInfo.score << endl;
     cout << "Face Dir(0:Right, 2:Up  4:Left, 6:Down): " << PlayerInfo.facingDirection << endl;
@@ -862,7 +929,8 @@ void debug_info()
 void play()
 {
     // 初始化
-    if (!init_flag) initialize();
+    if (!init_flag)
+        initialize();
 
     // 更新重要状态和地图信息
     update_state();
@@ -888,23 +956,78 @@ void play()
             next_action = now_action = Action::setFood; // 手上食物是需要的，自然准备回去放到炉子上
     }
 
+    // 使用道具
+    if (PlayerInfo.tool != ToolEmpty && now_bag.is_one_time_use(PlayerInfo.tool) && !is_act)
+    {
+        if (PlayerInfo.tool == Fertilizer && now_action == Action::findFood
+                && !is_fertilized[target_food_point[0]] && ready_to_use())
+        {
+            use(1, 0, 0);
+            is_fertilized[target_food_point[0]] = true;
+            is_act = true;
+        }
+        else if (PlayerInfo.tool == Condiment && ready_to_use())
+        {
+            if (now_action == Action::pendMission)
+            {
+                use(1, 0, 0);
+                next_action = Action::findFood;
+                is_act = true;
+            }
+            if (now_action == Action::setFood)
+            {
+                put(1, getAngle(), true);
+                is_act = true;
+            }
+        }
+        else if (PlayerInfo.tool == SpaceGate)
+        {
+            int offsetX = target_pos.x - now_pos.x;
+            int offsetY = target_pos.y - now_pos.y;
+            int minusX = 0;
+            bool is_block = false;
+            for (int i = 0; i < map_block.size(); ++i)
+                if (map_block[i].x == now_pos.x + offsetX && map_block[i].y == now_pos.y + offsetY)
+                    is_block = true;
+            while (GameMap[now_pos.x + offsetX][now_pos.y + offsetY] || is_block)
+            {
+                minusX ? offsetX-- : offsetY--;
+                minusX ^= 1;
+                is_block = false;
+                for (int i = 0; i < map_block.size(); ++i)
+                    if (map_block[i].x == now_pos.x + offsetX && map_block[i].y == now_pos.y + offsetY)
+                        is_block = true;
+            }
+            use(1, offsetX, offsetY);
+            is_act = true;
+        }
+        else
+        {
+            use(1, 0, 0);
+            is_act = true;
+        }
+    }
+
+    // 如果需要捡新的道具，就先把手上的道具先放下
+    if (PlayerInfo.tool != ToolEmpty && target_obj.object.objType == Tool && ready_to_use())
+    {
+        put(0, getAngle(), true);
+        is_act = true;
+    }
+
     // 提交任务
     if (now_action == Action::pendMission && !is_act)
     {
-        bool is_arrive = false;
-        for (int i = 0; i < MissionPointAdjacentPosition.size(); ++i)
-            if (now_pos == MissionPointAdjacentPosition[i] && check_face())
-                is_arrive = true;
-        if (!is_arrive)
+        if (ready_to_use())
+        {
+            use(0, 0, 0);
+            next_action = Action::findFood;
+        }
+        else
         {
             target_pos = MissionPointPosition[target_mission_point[0]];
             Path now_path = BFSFindPath(now_pos, target_pos);
             start_move(now_path.move_list.top());
-        }
-        else
-        {
-            use(0, 0, 0);
-            next_action = Action::findFood;
         }
         is_act = true;
     }
@@ -912,26 +1035,22 @@ void play()
     // 放置食材并检查是否可以开炉
     if (now_action == Action::setFood && !is_act)
     {
-        bool is_arrive = false;
-        for (int i = 0; i < CookerAdjacentPosition.size(); ++i)
-            if (now_pos == CookerAdjacentPosition[i] && check_face())
-                is_arrive = true;
-        if (!is_arrive)
-        {
-            target_pos = CookerPosition[target_cooker[0]];
-            Path now_path = BFSFindPath(now_pos, target_pos);
-            start_move(now_path.move_list.top());
-        }
-        else
+        target_pos = CookerPosition[target_cooker[0]];
+        if (ready_to_use())
         {
             put(1, getAngle(), true);
-            if (cook_time <= 0) // 可以做菜了，开炉  **待完善（这里涉及到两个玩家共享变量的问题）**
+            if (cook_time[target_cooker[0]] <= 0) // 可以做菜了，开炉  **待完善（这里涉及到两个玩家共享变量的问题）**
             {
                 next_action = Action::cookFood;
                 now_dish = (DishType)-1; // 将now_dish置-1，给cookFood提供初值条件
             }
             else
                 next_action = Action::findFood; // 炉子正在用，继续去找食物
+        }
+        else
+        {
+            Path now_path = BFSFindPath(now_pos, target_pos);
+            start_move(now_path.move_list.top());
         }
         is_act = true;
     }
@@ -957,26 +1076,21 @@ void play()
             redundant = now_bag.get_what_is_redundant(now_dish, target_cooker[0]);
             if (redundant.empty())
             {
-                int arrive_distance = 5;
-                for (int i = 0; i < CookerAdjacentPosition.size(); ++i)
-                    if (now_pos == CookerAdjacentPosition[i] && check_face())
-                        arrive_distance = 1;
-                if (arrive_distance > 1)
-                {
-                    target_pos = CookerPosition[target_cooker[0]];
-                    Path now_path = BFSFindPath(now_pos, target_pos);
-                    start_move(now_path.move_list.top());
-                }
-                else
+                target_pos = CookerPosition[target_cooker[0]];
+                if (ready_to_use())
                 {
                     //cout << "Cook!!!" << endl;
                     use(0, 0, 0);
                     next_action = Action::findFood;
-                    cook_time = Constant::DishInfo.find(now_dish)->second.CookTime;
+                    cook_time[target_cooker[0]] = Constant::DishInfo.find(now_dish)->second.CookTime;
+                }
+                else
+                {
+                    Path now_path = BFSFindPath(now_pos, target_pos);
+                    start_move(now_path.move_list.top());
                 }
             }
-            else
-                pick(false, Dish, redundant[0]);
+            else pick(false, Dish, redundant[0]);
         }
         is_act = true;
     }
@@ -984,29 +1098,29 @@ void play()
     // 寻找食材
     if (now_action == Action::findFood && !is_act)
     {
-        int arrive_distance = 5;
-        if (!target_food.empty())
-            target_pos = target_food[0].position;
+        if (target_obj.value > 0)
+            target_pos = target_obj.object.position;
         else
             target_pos = FoodPointPosition[target_food_point[0]];
-        for (int i = 0; i < FoodPointAdjacentPosition.size(); ++i)
-            if (now_pos == FoodPointAdjacentPosition[i] && check_face())
-                arrive_distance = 1;
-        if (target_pos == now_pos)
-            arrive_distance = 0;
-        if (arrive_distance > 1)
+
+        if (ready_to_use() || target_pos == now_pos)
+        {
+            if (target_pos == FoodPointPosition[target_food_point[0]])
+                pick(false, Block, 0);
+            else if (target_obj.value > 0)
+            {
+                if (target_obj.object.blockType == Dish)
+                    pick(true, Dish, target_obj.object.dish);
+                else
+                    pick(true, Tool, target_obj.object.tool);
+            }
+        }
+        else
         {
             Path now_path = BFSFindPath(now_pos, target_pos);
             start_move(now_path.move_list.top());
         }
-        else
-        {
-            if (arrive_distance)
-                pick(false, Block, 0);
-            else if (!target_food.empty())
-                pick(true, Dish, target_food[0].dish);
-        }
         is_act = true;
     }
-    //debug_info();
+    debug_info();
 }
