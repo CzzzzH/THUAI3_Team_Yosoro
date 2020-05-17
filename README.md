@@ -4,7 +4,7 @@
 
 组员分工如下：
 
-`FindPath.cpp`  **@AantonyMei**
+`FindPath.cpp`  **@AnthonyMei**
 
 `FoodAnalysis.cpp ` **@hanyulai**
 
